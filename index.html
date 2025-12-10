@@ -3,36 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스마트 지도 (이력 상태 유지)</title>
+    <title>스마트 지도 (지도/위성 토글 추가)</title>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; }
         .app-container { display: flex; flex-direction: column; height: 100vh; position: relative; }
         
-        /* 상단 검색바 */
+        /* 상단 검색바 Container */
         .top-bar {
-            position: absolute; top: 20px; left: 20px; width: 380px; z-index: 100;
-            display: flex; gap: 10px; background: rgba(255, 255, 255, 0.95);
-            padding: 12px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            align-items: flex-start;
+            position: absolute; top: 20px; left: 20px; width: 440px; /* 버튼 추가로 너비 살짝 늘림 */
+            z-index: 100;
+            display: flex; gap: 8px; background: rgba(255, 255, 255, 0.95);
+            padding: 10px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            align-items: center;
         }
-        @media (max-width: 600px) { .top-bar { left: 50%; transform: translateX(-50%); width: 90%; } }
+        @media (max-width: 600px) { 
+            .top-bar { left: 50%; transform: translateX(-50%); width: 90%; flex-wrap: nowrap; } 
+            input { font-size: 14px; }
+        }
 
         .search-wrapper { flex: 1; position: relative; }
-        
-        input { width: 100%; padding: 12px 40px 12px 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box; }
+        input { width: 100%; padding: 12px 35px 12px 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box; }
         input:focus { border-color: #fee500; }
         
-        /* 이력 열기/닫기 토글 버튼 */
         .history-toggle-btn {
             position: absolute; right: 5px; top: 23px; transform: translateY(-50%);
             border: none; background: transparent; cursor: pointer;
-            font-size: 12px; color: #888; padding: 10px;
-            transition: color 0.2s;
+            font-size: 12px; color: #888; padding: 10px; transition: color 0.2s;
         }
         .history-toggle-btn:hover { color: #333; }
 
-        .search-btn { padding: 12px 20px; font-size: 16px; cursor: pointer; background-color: #fee500; border: none; border-radius: 6px; font-weight: bold; color: #191919; white-space: nowrap; height: 45px; }
+        .search-btn { padding: 0 15px; font-size: 16px; cursor: pointer; background-color: #fee500; border: none; border-radius: 6px; font-weight: bold; color: #191919; white-space: nowrap; height: 45px; }
         .search-btn:hover { background-color: #fdd835; }
+
+        /* [추가됨] 지도/위성 토글 버튼 */
+        .map-type-btn {
+            width: 45px; height: 45px; flex-shrink: 0;
+            border: 1px solid #ddd; background-color: #fff;
+            border-radius: 6px; cursor: pointer; font-size: 20px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .map-type-btn:hover { background-color: #f0f0f0; }
+        /* 위성 모드일 때 활성화 스타일 */
+        .map-type-btn.active { background-color: #333; color: #fff; border-color: #333; }
 
         /* 검색 이력 */
         #historyList {
@@ -47,9 +60,34 @@
         .delete-btn { color: #999; padding: 2px 6px; font-size: 12px; cursor: pointer; }
         .delete-btn:hover { color: #ff4b4b; font-weight: bold; }
 
+        /* 설명서 버튼 */
+        .help-container { position: absolute; top: 20px; right: 20px; z-index: 100; }
+        .help-btn {
+            width: 45px; height: 45px; border-radius: 50%; background: #fff;
+            border: none; box-shadow: 0 4px 8px rgba(0,0,0,0.15); cursor: pointer;
+            font-size: 20px; font-weight: bold; color: #555; display: flex;
+            align-items: center; justify-content: center; transition: 0.2s;
+        }
+        .help-btn:hover { background: #f8f8f8; color: #333; }
+        
+        .help-tooltip {
+            display: none; position: absolute; top: 60px; right: 0; width: 220px;
+            background: rgba(255, 255, 255, 0.98); padding: 20px; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 14px; color: #333;
+            line-height: 1.6; text-align: left;
+        }
+        .help-tooltip h4 { margin: 0 0 10px 0; font-size: 16px; color: #333; border-bottom: 2px solid #fee500; display: inline-block; padding-bottom: 4px; }
+        .help-tooltip ul { padding-left: 20px; margin: 0; list-style-type: disc; }
+        .help-tooltip li { margin-bottom: 6px; color: #555; }
+        .help-tooltip li b { color: #333; }
+        .help-tooltip::before {
+            content: ''; position: absolute; top: -10px; right: 15px;
+            border-width: 0 10px 10px 10px; border-style: solid;
+            border-color: transparent transparent rgba(255, 255, 255, 0.98) transparent;
+        }
+
         #map { flex: 1; width: 100%; height: 100%; background-color: #eee; }
 
-        /* 결과창 */
         .result-box {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             z-index: 10; background: rgba(33, 33, 33, 0.95); color: #fff;
@@ -60,7 +98,6 @@
         .coords-text { font-size: 19px; font-family: monospace; font-weight: bold; display: block; }
         .guide-text { font-size: 13px; color: #bbb; margin-top: 5px; display: block; }
 
-        /* 통합 오버레이 */
         .overlay-wrap {
             background: white; border: 1px solid #ddd; border-radius: 8px; 
             box-shadow: 0 6px 16px rgba(0,0,0,0.25); font-size: 14px; min-width: 320px;
@@ -72,19 +109,12 @@
         .address-row:last-child { border-bottom: none; }
         .address-row:hover { background-color: #e3f2fd; color: #0078ff; } 
         .addr-label { font-size: 11px; color: #999; margin-right: 5px; display: inline-block; width: 35px;}
-
-        .roadview-part {
-            width: 60px; background-color: #fee500; cursor: pointer;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            border-left: 1px solid #ddd; transition: background 0.2s;
-        }
+        .roadview-part { width: 60px; background-color: #fee500; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; border-left: 1px solid #ddd; transition: background 0.2s; }
         .roadview-part:hover { background-color: #fdd835; }
         .rv-icon { font-size: 24px; margin-bottom: 4px; }
         .rv-text { font-size: 11px; font-weight: bold; color: #333; }
-
         .overlay-wrap::after { content: ''; position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); border-width: 10px 8px 0; border-style: solid; border-color: #fff transparent; display: block; width: 0; z-index: 1; }
 
-        /* 로드뷰 모달 */
         #roadviewModal {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 5000;
@@ -97,7 +127,6 @@
         }
         .rv-close-btn:hover { background: rgba(255,255,255,0.2); }
 
-        /* 토스트 알림 */
         #toast {
             visibility: hidden; min-width: 250px; background-color: #333; color: #fff;
             text-align: center; border-radius: 8px; padding: 12px; position: fixed; z-index: 6000;
@@ -118,6 +147,22 @@
             <div id="historyList"></div>
         </div>
         <button class="search-btn" onclick="triggerSearch()">검색</button>
+        
+        <button id="mapTypeBtn" class="map-type-btn" onclick="toggleMapType()" title="지도/위성 변경">🛰️</button>
+    </div>
+
+    <div class="help-container">
+        <button class="help-btn" onclick="toggleHelp()">?</button>
+        <div id="helpTooltip" class="help-tooltip">
+            <h4>💡 사용 방법</h4>
+            <ul>
+                <li><b>좌클릭:</b> 좌표 복사</li>
+                <li><b>우클릭:</b> 주소 & 로드뷰 확인</li>
+                <li><b>검색 이력:</b> ▼ 버튼으로 고정</li>
+                <li><b>지도 전환:</b> 🛰️ 위성 / 🗺️ 일반</li>
+                <li><b>로드뷰 닫기:</b> ESC 키</li>
+            </ul>
+        </div>
     </div>
     
     <div id="map"></div>
@@ -154,8 +199,7 @@
     var currentCoordsString = "";
     var rightClickedCoords = null; 
     var historyList = JSON.parse(localStorage.getItem('mapSearchHistory')) || [];
-
-    // [수정] startSearch 등에서 hideHistory()를 호출하지 않도록 하여 상태 유지
+    var currentMapType = 'roadmap'; // 현재 지도 타입 추적
 
     function triggerSearch() {
         var keyword = document.getElementById('addressInput').value.trim();
@@ -168,8 +212,6 @@
         addressOverlay.setMap(null);
         document.getElementById('addressInput').value = keyword;
         
-        // 검색해도 목록을 강제로 닫지 않음 (상태 유지)
-
         geocoder.addressSearch(keyword, function(result, status) {
             if (status === kakao.maps.services.Status.OK && result.length > 0) {
                 moveToLocation(result[0].y, result[0].x);
@@ -194,10 +236,8 @@
 
     function saveHistory(keyword) {
         if (historyList.includes(keyword)) return; 
-
         historyList.unshift(keyword);
         if (historyList.length > 5) historyList = historyList.slice(0, 5);
-        
         localStorage.setItem('mapSearchHistory', JSON.stringify(historyList));
         renderHistory(); 
     }
@@ -211,10 +251,7 @@
 
     function renderHistory() {
         var listDiv = document.getElementById('historyList');
-        // 현재 display 상태가 none이면 굳이 렌더링해도 안보이지만,
-        // 상태 유지를 위해 내부 HTML은 갱신해둠.
         listDiv.innerHTML = '';
-        
         if (historyList.length === 0) {
             var row = document.createElement('div');
             row.className = 'history-item';
@@ -228,17 +265,14 @@
         historyList.forEach(function(item) {
             var row = document.createElement('div');
             row.className = 'history-item';
-            
             var textSpan = document.createElement('span');
             textSpan.className = 'history-text';
             textSpan.innerText = item;
             textSpan.onclick = function() { startSearch(item); };
-            
             var delBtn = document.createElement('span');
             delBtn.className = 'delete-btn';
             delBtn.innerText = '✕';
             delBtn.onclick = function(e) { deleteHistory(e, item); };
-
             row.appendChild(textSpan);
             row.appendChild(delBtn);
             listDiv.appendChild(row);
@@ -248,7 +282,6 @@
     function toggleHistory() {
         var listDiv = document.getElementById('historyList');
         var toggleBtn = document.getElementById('toggleBtn');
-        
         if (listDiv.style.display === 'block') {
             listDiv.style.display = 'none';
             toggleBtn.innerText = '▼';
@@ -259,7 +292,33 @@
         }
     }
 
-    // 입력창 클릭 시 내용 비우기 (목록 상태는 건드리지 않음)
+    function toggleHelp() {
+        var tooltip = document.getElementById('helpTooltip');
+        if (tooltip.style.display === 'block') {
+            tooltip.style.display = 'none';
+        } else {
+            tooltip.style.display = 'block';
+        }
+    }
+    
+    // [추가됨] 지도 모드 변경 함수
+    function toggleMapType() {
+        var btn = document.getElementById('mapTypeBtn');
+        if (currentMapType === 'roadmap') {
+            map.setMapTypeId(kakao.maps.MapTypeId.HYBRID); // 위성(하이브리드)
+            currentMapType = 'hybrid';
+            btn.innerText = '🗺️'; // 아이콘 변경 (지도로 돌아가기)
+            btn.classList.add('active');
+            showToast("🛰️ 위성 지도로 변경됨", "success");
+        } else {
+            map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP); // 일반지도
+            currentMapType = 'roadmap';
+            btn.innerText = '🛰️'; // 아이콘 변경 (위성으로 가기)
+            btn.classList.remove('active');
+            showToast("🗺️ 일반 지도로 변경됨", "success");
+        }
+    }
+
     document.getElementById('addressInput').addEventListener('click', function() {
         this.value = '';
     });
@@ -272,23 +331,17 @@
         addressOverlay.setMap(null);
     }
 
-    // --- 이벤트 리스너 ---
-
     kakao.maps.event.addListener(map, 'click', function(mouseEvent) {        
         addressOverlay.setMap(null); 
         var latlng = mouseEvent.latLng;
         marker.setPosition(latlng);
         updateInfoText(latlng.getLat(), latlng.getLng());
         copyToClipboard(currentCoordsString, "좌표");
-        
-        // [수정] 지도 클릭해도 이력 닫지 않음
     });
 
     kakao.maps.event.addListener(map, 'rightclick', function(mouseEvent) {
         rightClickedCoords = mouseEvent.latLng;
         showOverlayWithRoadview();
-        
-        // [수정] 우클릭해도 이력 닫지 않음
     });
 
     function showOverlayWithRoadview() {
@@ -298,7 +351,6 @@
             if (status === kakao.maps.services.Status.OK) {
                 var roadAddr = result[0].road_address ? result[0].road_address.address_name : "도로명주소 없음";
                 var jibunAddr = result[0].address ? result[0].address.address_name : "지번주소 없음";
-                
                 roadAddr = roadAddr.replace('대구광역시', '대구');
                 
                 marker.setPosition(rightClickedCoords);
@@ -330,7 +382,6 @@
 
     window.checkAndOpenRoadview = function(e) {
         if(e) e.stopPropagation(); 
-
         roadviewClient.getNearestPanoId(rightClickedCoords, 50, function(panoId) {
             if (panoId === null) {
                 showToast("❌ 이곳은 로드뷰가 없는 지역입니다.", "error");
@@ -386,7 +437,6 @@
     
     kakao.maps.event.addListener(map, 'dragstart', () => {
         addressOverlay.setMap(null);
-        // [수정] 드래그해도 이력 닫지 않음
     });
 
     document.getElementById("addressInput").addEventListener("keyup", function(e) {
