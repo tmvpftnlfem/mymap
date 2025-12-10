@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스마트 지도 (순서고정 & 통합메뉴)</title>
+    <title>스마트 지도 (이력 상태 유지)</title>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; }
         .app-container { display: flex; flex-direction: column; height: 100vh; position: relative; }
@@ -18,9 +18,19 @@
         @media (max-width: 600px) { .top-bar { left: 50%; transform: translateX(-50%); width: 90%; } }
 
         .search-wrapper { flex: 1; position: relative; }
-        input { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box; }
+        
+        input { width: 100%; padding: 12px 40px 12px 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box; }
         input:focus { border-color: #fee500; }
         
+        /* 이력 열기/닫기 토글 버튼 */
+        .history-toggle-btn {
+            position: absolute; right: 5px; top: 23px; transform: translateY(-50%);
+            border: none; background: transparent; cursor: pointer;
+            font-size: 12px; color: #888; padding: 10px;
+            transition: color 0.2s;
+        }
+        .history-toggle-btn:hover { color: #333; }
+
         .search-btn { padding: 12px 20px; font-size: 16px; cursor: pointer; background-color: #fee500; border: none; border-radius: 6px; font-weight: bold; color: #191919; white-space: nowrap; height: 45px; }
         .search-btn:hover { background-color: #fdd835; }
 
@@ -39,7 +49,7 @@
 
         #map { flex: 1; width: 100%; height: 100%; background-color: #eee; }
 
-        /* 하단 결과창 */
+        /* 결과창 */
         .result-box {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             z-index: 10; background: rgba(33, 33, 33, 0.95); color: #fff;
@@ -50,7 +60,7 @@
         .coords-text { font-size: 19px; font-family: monospace; font-weight: bold; display: block; }
         .guide-text { font-size: 13px; color: #bbb; margin-top: 5px; display: block; }
 
-        /* 통합 오버레이 (주소+로드뷰) */
+        /* 통합 오버레이 */
         .overlay-wrap {
             background: white; border: 1px solid #ddd; border-radius: 8px; 
             box-shadow: 0 6px 16px rgba(0,0,0,0.25); font-size: 14px; min-width: 320px;
@@ -103,7 +113,8 @@
 <div class="app-container">
     <div class="top-bar">
         <div class="search-wrapper">
-            <input type="text" id="addressInput" placeholder="주소 또는 장소명 (예: 대구역)" autocomplete="off" onfocus="this.value=''">
+            <input type="text" id="addressInput" placeholder="주소 또는 장소명 (예: 대구역)" autocomplete="off">
+            <button id="toggleBtn" class="history-toggle-btn" onclick="toggleHistory()">▼</button>
             <div id="historyList"></div>
         </div>
         <button class="search-btn" onclick="triggerSearch()">검색</button>
@@ -144,7 +155,7 @@
     var rightClickedCoords = null; 
     var historyList = JSON.parse(localStorage.getItem('mapSearchHistory')) || [];
 
-    renderHistory(); 
+    // [수정] startSearch 등에서 hideHistory()를 호출하지 않도록 하여 상태 유지
 
     function triggerSearch() {
         var keyword = document.getElementById('addressInput').value.trim();
@@ -156,6 +167,8 @@
         
         addressOverlay.setMap(null);
         document.getElementById('addressInput').value = keyword;
+        
+        // 검색해도 목록을 강제로 닫지 않음 (상태 유지)
 
         geocoder.addressSearch(keyword, function(result, status) {
             if (status === kakao.maps.services.Status.OK && result.length > 0) {
@@ -179,19 +192,14 @@
         });
     }
 
-    // [수정됨] 이력 저장 (이미 있으면 순서 변경 안함)
     function saveHistory(keyword) {
-        // 이미 목록에 있다면 아무것도 하지 않음 (순서 유지)
-        if (historyList.includes(keyword)) {
-            return;
-        }
+        if (historyList.includes(keyword)) return; 
 
-        // 새 검색어만 맨 앞에 추가
         historyList.unshift(keyword);
         if (historyList.length > 5) historyList = historyList.slice(0, 5);
         
         localStorage.setItem('mapSearchHistory', JSON.stringify(historyList));
-        renderHistory();
+        renderHistory(); 
     }
 
     function deleteHistory(e, keyword) {
@@ -203,12 +211,18 @@
 
     function renderHistory() {
         var listDiv = document.getElementById('historyList');
+        // 현재 display 상태가 none이면 굳이 렌더링해도 안보이지만,
+        // 상태 유지를 위해 내부 HTML은 갱신해둠.
         listDiv.innerHTML = '';
+        
         if (historyList.length === 0) {
-            listDiv.style.display = 'none';
+            var row = document.createElement('div');
+            row.className = 'history-item';
+            row.style.color = '#999';
+            row.style.justifyContent = 'center';
+            row.innerText = '검색 이력이 없습니다.';
+            listDiv.appendChild(row);
             return;
-        } else {
-            listDiv.style.display = 'block';
         }
 
         historyList.forEach(function(item) {
@@ -231,6 +245,25 @@
         });
     }
 
+    function toggleHistory() {
+        var listDiv = document.getElementById('historyList');
+        var toggleBtn = document.getElementById('toggleBtn');
+        
+        if (listDiv.style.display === 'block') {
+            listDiv.style.display = 'none';
+            toggleBtn.innerText = '▼';
+        } else {
+            renderHistory();
+            listDiv.style.display = 'block';
+            toggleBtn.innerText = '▲';
+        }
+    }
+
+    // 입력창 클릭 시 내용 비우기 (목록 상태는 건드리지 않음)
+    document.getElementById('addressInput').addEventListener('click', function() {
+        this.value = '';
+    });
+
     function moveToLocation(lat, lng) {
         var coords = new kakao.maps.LatLng(lat, lng);
         map.setCenter(coords);
@@ -241,20 +274,21 @@
 
     // --- 이벤트 리스너 ---
 
-    // 1. 좌클릭: 이동 + 복사
     kakao.maps.event.addListener(map, 'click', function(mouseEvent) {        
         addressOverlay.setMap(null); 
         var latlng = mouseEvent.latLng;
         marker.setPosition(latlng);
-        
         updateInfoText(latlng.getLat(), latlng.getLng());
         copyToClipboard(currentCoordsString, "좌표");
+        
+        // [수정] 지도 클릭해도 이력 닫지 않음
     });
 
-    // 2. 우클릭: 통합 오버레이 표시
     kakao.maps.event.addListener(map, 'rightclick', function(mouseEvent) {
         rightClickedCoords = mouseEvent.latLng;
         showOverlayWithRoadview();
+        
+        // [수정] 우클릭해도 이력 닫지 않음
     });
 
     function showOverlayWithRoadview() {
@@ -265,7 +299,6 @@
                 var roadAddr = result[0].road_address ? result[0].road_address.address_name : "도로명주소 없음";
                 var jibunAddr = result[0].address ? result[0].address.address_name : "지번주소 없음";
                 
-                // 단축
                 roadAddr = roadAddr.replace('대구광역시', '대구');
                 
                 marker.setPosition(rightClickedCoords);
@@ -318,9 +351,7 @@
     }
 
     window.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeRoadview();
-        }
+        if (event.key === 'Escape') closeRoadview();
     });
 
     window.copyText = function(e, text, type) {
@@ -355,6 +386,7 @@
     
     kakao.maps.event.addListener(map, 'dragstart', () => {
         addressOverlay.setMap(null);
+        // [수정] 드래그해도 이력 닫지 않음
     });
 
     document.getElementById("addressInput").addEventListener("keyup", function(e) {
