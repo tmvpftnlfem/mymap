@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 지도 (순서고정 & 통합메뉴)</title>
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; }
+        .app-container { display: flex; flex-direction: column; height: 100vh; position: relative; }
+        
+        /* 상단 검색바 */
+        .top-bar {
+            position: absolute; top: 20px; left: 20px; width: 380px; z-index: 100;
+            display: flex; gap: 10px; background: rgba(255, 255, 255, 0.95);
+            padding: 12px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            align-items: flex-start;
+        }
+        @media (max-width: 600px) { .top-bar { left: 50%; transform: translateX(-50%); width: 90%; } }
+
+        .search-wrapper { flex: 1; position: relative; }
+        input { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; outline: none; box-sizing: border-box; }
+        input:focus { border-color: #fee500; }
+        
+        .search-btn { padding: 12px 20px; font-size: 16px; cursor: pointer; background-color: #fee500; border: none; border-radius: 6px; font-weight: bold; color: #191919; white-space: nowrap; height: 45px; }
+        .search-btn:hover { background-color: #fdd835; }
+
+        /* 검색 이력 */
+        #historyList {
+            display: none; position: absolute; top: 50px; left: 0; width: 100%;
+            background: #fff; border: 1px solid #ddd; border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; z-index: 200;
+        }
+        .history-item { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; font-size: 14px; color: #333; display: flex; justify-content: space-between; align-items: center; }
+        .history-item:last-child { border-bottom: none; }
+        .history-item:hover { background-color: #f5f5f5; }
+        .history-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .delete-btn { color: #999; padding: 2px 6px; font-size: 12px; cursor: pointer; }
+        .delete-btn:hover { color: #ff4b4b; font-weight: bold; }
+
+        #map { flex: 1; width: 100%; height: 100%; background-color: #eee; }
+
+        /* 하단 결과창 */
+        .result-box {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            z-index: 10; background: rgba(33, 33, 33, 0.95); color: #fff;
+            padding: 15px 30px; border-radius: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            cursor: pointer; text-align: center; min-width: 300px;
+        }
+        .result-box:active { transform: translateX(-50%) scale(0.96); }
+        .coords-text { font-size: 19px; font-family: monospace; font-weight: bold; display: block; }
+        .guide-text { font-size: 13px; color: #bbb; margin-top: 5px; display: block; }
+
+        /* 통합 오버레이 (주소+로드뷰) */
+        .overlay-wrap {
+            background: white; border: 1px solid #ddd; border-radius: 8px; 
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25); font-size: 14px; min-width: 320px;
+            position: relative; bottom: 50px; overflow: hidden; display: flex;
+        }
+        .address-part { flex: 1; display: flex; flex-direction: column; }
+        .address-header { background: #f8f9fa; padding: 8px 12px; font-weight: bold; font-size: 12px; color: #666; border-bottom: 1px solid #eee; }
+        .address-row { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; line-height: 1.4; color: #333; position: relative; }
+        .address-row:last-child { border-bottom: none; }
+        .address-row:hover { background-color: #e3f2fd; color: #0078ff; } 
+        .addr-label { font-size: 11px; color: #999; margin-right: 5px; display: inline-block; width: 35px;}
+
+        .roadview-part {
+            width: 60px; background-color: #fee500; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border-left: 1px solid #ddd; transition: background 0.2s;
+        }
+        .roadview-part:hover { background-color: #fdd835; }
+        .rv-icon { font-size: 24px; margin-bottom: 4px; }
+        .rv-text { font-size: 11px; font-weight: bold; color: #333; }
+
+        .overlay-wrap::after { content: ''; position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); border-width: 10px 8px 0; border-style: solid; border-color: #fff transparent; display: block; width: 0; z-index: 1; }
+
+        /* 로드뷰 모달 */
+        #roadviewModal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 5000;
+        }
+        #roadview { width: 100%; height: 100%; }
+        .rv-close-btn {
+            position: absolute; top: 20px; right: 20px; z-index: 6000;
+            background: rgba(0,0,0,0.6); color: white; border: 1px solid #555; padding: 10px 20px;
+            border-radius: 30px; cursor: pointer; font-weight: bold; font-size: 15px; transition: 0.2s;
+        }
+        .rv-close-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* 토스트 알림 */
+        #toast {
+            visibility: hidden; min-width: 250px; background-color: #333; color: #fff;
+            text-align: center; border-radius: 8px; padding: 12px; position: fixed; z-index: 6000;
+            top: 100px; left: 50%; transform: translateX(-50%); font-size: 15px; opacity: 0; transition: opacity 0.3s;
+        }
+        #toast.show { visibility: visible; opacity: 1; }
+        #toast.success { background-color: #00c73c; } 
+        #toast.error { background-color: #ff4b4b; } 
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="top-bar">
+        <div class="search-wrapper">
+            <input type="text" id="addressInput" placeholder="주소 또는 장소명 (예: 대구역)" autocomplete="off" onfocus="this.value=''">
+            <div id="historyList"></div>
+        </div>
+        <button class="search-btn" onclick="triggerSearch()">검색</button>
+    </div>
+    
+    <div id="map"></div>
+    
+    <div class="result-box" onclick="manualCopy()">
+        <span id="coordsDisplay" class="coords-text">35.8714354, 128.601445</span>
+        <span class="guide-text">👆 좌표 클릭하여 복사 (우클릭: 상세주소+로드뷰)</span>
+    </div>
+</div>
+
+<div id="roadviewModal">
+    <div id="roadview"></div>
+    <button class="rv-close-btn" onclick="closeRoadview()">✕ 닫기 (ESC)</button>
+</div>
+
+<div id="toast">알림</div>
+
+<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=909e0ad7aa8b42b6f536f64d6932eb38&libraries=services"></script>
+
+<script>
+    var mapContainer = document.getElementById('map'), 
+        mapOption = { center: new kakao.maps.LatLng(35.8714354, 128.601445), level: 3 }; 
+
+    var map = new kakao.maps.Map(mapContainer, mapOption); 
+    var geocoder = new kakao.maps.services.Geocoder(); 
+    var ps = new kakao.maps.services.Places(); 
+    var marker = new kakao.maps.Marker({ position: map.getCenter(), map: map });
+    var addressOverlay = new kakao.maps.CustomOverlay({ yAnchor: 1, zIndex: 3, clickable: true });
+    
+    var roadviewContainer = document.getElementById('roadview');
+    var roadview = new kakao.maps.Roadview(roadviewContainer);
+    var roadviewClient = new kakao.maps.RoadviewClient();
+
+    var currentCoordsString = "";
+    var rightClickedCoords = null; 
+    var historyList = JSON.parse(localStorage.getItem('mapSearchHistory')) || [];
+
+    renderHistory(); 
+
+    function triggerSearch() {
+        var keyword = document.getElementById('addressInput').value.trim();
+        startSearch(keyword);
+    }
+
+    function startSearch(keyword) {
+        if (!keyword) return showToast("검색어를 입력해주세요.", "error");
+        
+        addressOverlay.setMap(null);
+        document.getElementById('addressInput').value = keyword;
+
+        geocoder.addressSearch(keyword, function(result, status) {
+            if (status === kakao.maps.services.Status.OK && result.length > 0) {
+                moveToLocation(result[0].y, result[0].x);
+                saveHistory(keyword);
+                showToast("✅ 주소 검색 완료", "success");
+            } else {
+                showToast("🔍 주소 불명확. 장소명 검색...", "warning");
+                setTimeout(() => {
+                    ps.keywordSearch(keyword, function(places, status) {
+                        if (status === kakao.maps.services.Status.OK && places.length > 0) {
+                            moveToLocation(places[0].y, places[0].x);
+                            saveHistory(keyword);
+                            showToast("✅ 장소 검색 완료", "success");
+                        } else {
+                            showToast("❌ 결과가 없습니다.", "error");
+                        }
+                    });
+                }, 500);
+            }
+        });
+    }
+
+    // [수정됨] 이력 저장 (이미 있으면 순서 변경 안함)
+    function saveHistory(keyword) {
+        // 이미 목록에 있다면 아무것도 하지 않음 (순서 유지)
+        if (historyList.includes(keyword)) {
+            return;
+        }
+
+        // 새 검색어만 맨 앞에 추가
+        historyList.unshift(keyword);
+        if (historyList.length > 5) historyList = historyList.slice(0, 5);
+        
+        localStorage.setItem('mapSearchHistory', JSON.stringify(historyList));
+        renderHistory();
+    }
+
+    function deleteHistory(e, keyword) {
+        e.stopPropagation();
+        historyList = historyList.filter(item => item !== keyword);
+        localStorage.setItem('mapSearchHistory', JSON.stringify(historyList));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        var listDiv = document.getElementById('historyList');
+        listDiv.innerHTML = '';
+        if (historyList.length === 0) {
+            listDiv.style.display = 'none';
+            return;
+        } else {
+            listDiv.style.display = 'block';
+        }
+
+        historyList.forEach(function(item) {
+            var row = document.createElement('div');
+            row.className = 'history-item';
+            
+            var textSpan = document.createElement('span');
+            textSpan.className = 'history-text';
+            textSpan.innerText = item;
+            textSpan.onclick = function() { startSearch(item); };
+            
+            var delBtn = document.createElement('span');
+            delBtn.className = 'delete-btn';
+            delBtn.innerText = '✕';
+            delBtn.onclick = function(e) { deleteHistory(e, item); };
+
+            row.appendChild(textSpan);
+            row.appendChild(delBtn);
+            listDiv.appendChild(row);
+        });
+    }
+
+    function moveToLocation(lat, lng) {
+        var coords = new kakao.maps.LatLng(lat, lng);
+        map.setCenter(coords);
+        marker.setPosition(coords);
+        updateInfoText(lat, lng);
+        addressOverlay.setMap(null);
+    }
+
+    // --- 이벤트 리스너 ---
+
+    // 1. 좌클릭: 이동 + 복사
+    kakao.maps.event.addListener(map, 'click', function(mouseEvent) {        
+        addressOverlay.setMap(null); 
+        var latlng = mouseEvent.latLng;
+        marker.setPosition(latlng);
+        
+        updateInfoText(latlng.getLat(), latlng.getLng());
+        copyToClipboard(currentCoordsString, "좌표");
+    });
+
+    // 2. 우클릭: 통합 오버레이 표시
+    kakao.maps.event.addListener(map, 'rightclick', function(mouseEvent) {
+        rightClickedCoords = mouseEvent.latLng;
+        showOverlayWithRoadview();
+    });
+
+    function showOverlayWithRoadview() {
+        if (!rightClickedCoords) return;
+
+        geocoder.coord2Address(rightClickedCoords.getLng(), rightClickedCoords.getLat(), function(result, status) {
+            if (status === kakao.maps.services.Status.OK) {
+                var roadAddr = result[0].road_address ? result[0].road_address.address_name : "도로명주소 없음";
+                var jibunAddr = result[0].address ? result[0].address.address_name : "지번주소 없음";
+                
+                // 단축
+                roadAddr = roadAddr.replace('대구광역시', '대구');
+                
+                marker.setPosition(rightClickedCoords);
+                updateInfoText(rightClickedCoords.getLat(), rightClickedCoords.getLng());
+
+                var content = `
+                    <div class="overlay-wrap">
+                        <div class="address-part">
+                            <div class="address-header">클릭하면 복사됩니다</div>
+                            <div class="address-row" onclick="copyText(event, '${roadAddr}', '도로명주소')">
+                                <span class="addr-label">도로명</span> ${roadAddr}
+                            </div>
+                            <div class="address-row" onclick="copyText(event, '${jibunAddr}', '지번주소')">
+                                <span class="addr-label">지번</span> ${jibunAddr}
+                            </div>
+                        </div>
+                        <div class="roadview-part" onclick="checkAndOpenRoadview(event)">
+                            <div class="rv-icon">📷</div>
+                            <div class="rv-text">로드뷰</div>
+                        </div>
+                    </div>
+                `;
+                addressOverlay.setContent(content);
+                addressOverlay.setPosition(rightClickedCoords);
+                addressOverlay.setMap(map);
+            }
+        });
+    }
+
+    window.checkAndOpenRoadview = function(e) {
+        if(e) e.stopPropagation(); 
+
+        roadviewClient.getNearestPanoId(rightClickedCoords, 50, function(panoId) {
+            if (panoId === null) {
+                showToast("❌ 이곳은 로드뷰가 없는 지역입니다.", "error");
+            } else {
+                openRoadview(panoId);
+            }
+        });
+    }
+
+    function openRoadview(panoId) {
+        var modal = document.getElementById('roadviewModal');
+        modal.style.display = 'block';
+        roadview.setPanoId(panoId, rightClickedCoords); 
+    }
+
+    window.closeRoadview = function() {
+        document.getElementById('roadviewModal').style.display = 'none';
+    }
+
+    window.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeRoadview();
+        }
+    });
+
+    window.copyText = function(e, text, type) {
+        if(e) e.stopPropagation();
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(`📋 ${type} 복사 완료!`, "success");
+        }).catch(err => { showToast("복사 실패", "error"); });
+    }
+
+    function updateInfoText(lat, lng) {
+        currentCoordsString = lat + ", " + lng;
+        document.getElementById('coordsDisplay').innerText = currentCoordsString;
+    }
+
+    function manualCopy() { copyToClipboard(currentCoordsString, "좌표"); }
+
+    function copyToClipboard(text, label) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(`📋 ${label} 복사 완료!`, "success");
+        }).catch(() => showToast("복사 실패", "error"));
+    }
+
+    function showToast(message, type) {
+        var x = document.getElementById("toast");
+        x.innerText = message;
+        x.className = ""; 
+        if (type) x.classList.add(type);
+        x.classList.add("show");
+        if(x.timer) clearTimeout(x.timer);
+        x.timer = setTimeout(() => x.classList.remove("show"), 2000);
+    }
+    
+    kakao.maps.event.addListener(map, 'dragstart', () => {
+        addressOverlay.setMap(null);
+    });
+
+    document.getElementById("addressInput").addEventListener("keyup", function(e) {
+        if (e.key === "Enter") triggerSearch();
+    });
+</script>
+
+</body>
+</html>
